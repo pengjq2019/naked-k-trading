@@ -13,7 +13,25 @@ import datetime
 import os
 import sys
 
+def load_env():
+    """读取本地 .env 文件环境变量 (若存在)"""
+    env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        k, v = line.split('=', 1)
+                        if k.strip() not in os.environ:
+                            os.environ[k.strip()] = v.strip()
+        except Exception:
+            pass
+
+load_env()
+
 def is_market_open():
+
     """判断黄金交易市场是否开盘 (北京时间 UTC+8)
     通常周六早晨 06:00 闭盘，周一早晨 06:00 开盘。
     """
