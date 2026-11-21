@@ -1,0 +1,32 @@
+name: 比特币裸K线4小时价格行为微信推送
+
+on:
+  schedule:
+    # 每次4小时收线后第5分钟自动触发 (7x24小时全天候运转)
+    # 对应北京时间 00:05, 04:05, 08:05, 12:05, 16:05, 20:05
+    # 转换为 UTC 时间: 16:05, 20:05, 00:05, 04:05, 08:05, 12:05
+    - cron: '5 0,4,8,12,16,20 * * *'
+  workflow_dispatch: # 支持在 GitHub 页面一键手动触发即时分析
+
+jobs:
+  analyze_btc_and_push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 运行环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 执行比特币裸K双向研判并推送微信
+        env:
+          TZ: 'Asia/Shanghai'
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          WXPUSHER_APP_TOKEN: ${{ secrets.WXPUSHER_APP_TOKEN }}
+          WXPUSHER_UID: ${{ secrets.WXPUSHER_UID }}
+        run: |
+          python scripts/analyze_btc.py
