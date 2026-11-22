@@ -2,9 +2,11 @@ name: 黄金裸K线4小时价格行为微信推送
 
 on:
   schedule:
-    # 对应北京时间 02:08, 06:08, 10:08, 14:08, 18:08, 22:08 (错峰避开整点与05分全球并发排队洪峰)
+    # 对应北京时间 02:08, 06:08, 10:08, 14:08, 18:08, 22:08 (GitHub Actions 备用定时)
     - cron: '8 2,6,10,14,18,22 * * *'
-  workflow_dispatch: # 支持在 GitHub 页面一键手动触发测试
+  workflow_dispatch: # 支持网页一键运行与 workflow_dispatch API 触发
+  repository_dispatch: # 支持外部精准定时心跳 (如 cron-job.org) 瞬时唤醒
+    types: [gold_alert]
 
 jobs:
   analyze_and_push:
