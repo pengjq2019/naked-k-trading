@@ -64,6 +64,56 @@
 
 ---
 
+## 外部精准定时心跳触发 (cron-job.org)
+
+由于 GitHub Actions 内置的 `schedule (cron)` 在公用排队高峰期可能产生 10~30 分钟延迟，通过 **cron-job.org** 发送 Webhook 可以实现秒级无延迟唤醒。
+
+### 1. 获取 GitHub Personal Access Token (PAT)
+1. 登录 GitHub -> 右上角头像 -> **Settings** -> 左侧最底部 **Developer Settings**。
+2. 选择 **Personal access tokens** -> **Tokens (classic)** -> **Generate new token (classic)**。
+3. 勾选 **`repo`** 权限（如果是公开仓库，亦可勾选 `workflow` 权限）。
+4. 生成并复制 Token（形如 `ghp_xxxxxxxxxxxxxxxxxxxx`）。
+
+### 2. 在 cron-job.org 中创建定时任务
+
+#### (1) 比特币 (BTC) 4小时收线任务配置
+- **Title**: `BTC 裸K 4H 监控`
+- **URL**: `https://api.github.com/repos/pengjq2019/naked-k-trading/dispatches`
+- **Request Method**: `POST`
+- **Schedule**:
+  - **Timezone**: `Asia/Shanghai (UTC+08:00)`
+  - **Schedule type**: `User-defined`
+  - **Hours**: 勾选 `0, 4, 8, 12, 16, 20`
+  - **Minutes**: 勾选 `5`
+  - **Days of week**: 全选（加密货币 7x24 小时运行）
+- **Headers**:
+  - `Accept`: `application/vnd.github.v3+json`
+  - `Authorization`: `Bearer ghp_你的GitHubToken`
+  - `User-Agent`: `cron-job.org`
+  - `Content-Type`: `application/json`
+- **Request Body**:
+  ```json
+  {"event_type": "btc_alert"}
+  ```
+
+#### (2) 黄金 (Gold) 4小时收线任务配置
+- **Title**: `黄金 裸K 4H 监控`
+- **URL**: `https://api.github.com/repos/pengjq2019/naked-k-trading/dispatches`
+- **Request Method**: `POST`
+- **Schedule**:
+  - **Timezone**: `Asia/Shanghai (UTC+08:00)`
+  - **Schedule type**: `User-defined`
+  - **Hours**: 勾选 `2, 6, 10, 14, 18, 22`
+  - **Minutes**: 勾选 `8`
+  - **Days of week**: 勾选周一至周五（过滤周末休市）
+- **Headers** 与上方相同
+- **Request Body**:
+  ```json
+  {"event_type": "gold_alert"}
+  ```
+
+---
+
 ## 本地运行
 
 ```bash
