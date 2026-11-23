@@ -291,7 +291,10 @@ def generate_report():
     else:
         report.append(f"  - **细5（基础盈亏比）**：上方空间受限 ({dist_to_res:.1f}点)，基础盈亏比仅 {long_rr:.2f}:1 (<1.5:1)，计 0 星。")
         
-    long_final_str = f"2 + {long_stars} 星" if not long_veto else "0 分。达不到入场标准。"
+    if not long_veto:
+        long_final_str = f"2 + {long_stars} 星 (准予制定入场计划)"
+    else:
+        long_final_str = f"0 分【一票否决生效】 (细节获 {long_stars} 星，但基本门槛仅 0/2 未达标，触发刚性拦截)"
     report.append(f"- **最终评级**：**{long_final_str}**")
     report.append("")
     
@@ -384,7 +387,10 @@ def generate_report():
     else:
         report.append(f"  - **细5（基础盈亏比）**：向下回踩空间测算盈亏比仅 {short_rr:.2f}:1 (<1.5:1)，计 0 星。")
         
-    short_final_str = f"2 + {short_stars} 星" if not short_veto else "0 分。达不到入场标准。"
+    if not short_veto:
+        short_final_str = f"2 + {short_stars} 星 (准予制定入场计划)"
+    else:
+        short_final_str = f"0 分【一票否决生效】 (细节获 {short_stars} 星，但基本门槛仅 0/2 未达标，触发刚性拦截)"
     report.append(f"- **最终评级**：**{short_final_str}**")
     report.append("")
     
