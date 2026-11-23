@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-裸K线交易法 (Price Action) 比特币 (BTC/USDT) 全自动双向分析引擎
-数据源: OKX 现货行情 (主) + TradingView 加密扫描 (备/多周期指标)
-4H K线对齐 (UTC+8 北京时间): 00:00, 04:00, 08:00, 12:00, 16:00, 20:00
-支持微信推送: PushPlus (推送加), Server酱 (Turbo), 企业微信 Webhook, WxPusher
+裸K线交易法 (Price Action) 比特币全自动双向分析引擎 - 研报级标准版
+数据源: Binance / OKX 现货行情标准 (TradingView Scanner + OKX 回退)
+格式标准: 阶段一环境审查表格 + 阶段二 2+5 评级核算明细 + 阶段三 后续操作策略与推演
+4H K线对齐 (UTC+8 北京时间): 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 (7x24小时全天候)
 """
 
 import urllib.request
 import urllib.parse
 import json
 import datetime
+import math
 import os
 import sys
 
@@ -31,33 +32,24 @@ def load_env():
 
 load_env()
 
-def fetch_okx_candles(bar='4H', limit=20):
-    """从 OKX 获取最新 K 线数据"""
-    url = f"https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar={bar}&limit={limit}"
-    req = urllib.request.Request(
-        url,
-        headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-    )
-    with urllib.request.urlopen(req, timeout=12) as r:
-        res = json.loads(r.read().decode('utf-8'))
-        if res.get('code') == '0' and 'data' in res:
-            return res['data']
-    return None
-
-def fetch_tradingview_crypto():
-    """从 TradingView 获取加密货币技术指标与多周期均线"""
+def fetch_crypto_btc():
+    """从 TradingView Scanner 获取 BTCUSDT 实时数据与历史极值 (主数据源)"""
+    cols = [
+        'name', 'close', 'open', 'high', 'low',
+        'close|240', 'open|240', 'high|240', 'low|240',
+        'close[1]|240', 'open[1]|240', 'high[1]|240', 'low[1]|240',
+        'close|60', 'open|60', 'high|60', 'low|60',
+        'close[1]', 'open[1]', 'high[1]', 'low[1]',
+        'high[2]', 'low[2]',
+        'EMA20|240', 'SMA20|240', 'SMA50|240', 'RSI|240', 'MACD.macd|240', 'MACD.signal|240',
+        'EMA20', 'SMA20', 'RSI'
+    ]
     try:
         url = 'https://scanner.tradingview.com/crypto/scan'
-        cols = [
-            'name', 'close', 'open', 'high', 'low',
-            'close|240', 'open|240', 'high|240', 'low|240',
-            'close[1]|240', 'open[1]|240', 'high[1]|240', 'low[1]|240',
-            'EMA20|240', 'SMA20|240', 'EMA50|240', 'EMA200|240', 'RSI|240', 'MACD.macd|240', 'MACD.signal|240',
-            'close[1]', 'open[1]', 'high[1]', 'low[1]',
-            'EMA20', 'EMA50', 'EMA200', 'RSI',
-            'close|1W', 'open|1W', 'high|1W', 'low|1W', 'EMA20|1W'
-        ]
-        payload = {'symbols': {'tickers': ['BINANCE:BTCUSDT']}, 'columns': cols}
+        payload = {
+            'symbols': {'tickers': ['BINANCE:BTCUSDT']},
+            'columns': cols
+        }
         req = urllib.request.Request(
             url,
             data=json.dumps(payload).encode('utf-8'),
@@ -68,7 +60,52 @@ def fetch_tradingview_crypto():
             row = raw['data'][0]['d']
             return dict(zip(cols, row))
     except Exception as e:
-        return {}
+        # 回退至 OKX 现货 API
+        try:
+            url_4h = "https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=4H&limit=5"
+            req_4h = urllib.request.Request(url_4h, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req_4h, timeout=10) as r:
+                res_4h = json.loads(r.read().decode('utf-8'))['data']
+
+            url_1d = "https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=1D&limit=5"
+            req_1d = urllib.request.Request(url_1d, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req_1d, timeout=10) as r:
+                res_1d = json.loads(r.read().decode('utf-8'))['data']
+
+            c_run = float(res_4h[0][4])
+            fallback = {
+                'name': 'BTCUSDT',
+                'close': c_run,
+                'open': float(res_1d[0][1]),
+                'high': float(res_1d[0][2]),
+                'low': float(res_1d[0][3]),
+                'close|240': c_run,
+                'open|240': float(res_4h[0][1]),
+                'high|240': float(res_4h[0][2]),
+                'low|240': float(res_4h[0][3]),
+                'close[1]|240': float(res_4h[1][4]),
+                'open[1]|240': float(res_4h[1][1]),
+                'high[1]|240': float(res_4h[1][2]),
+                'low[1]|240': float(res_4h[1][3]),
+                'close[1]': float(res_1d[1][4]),
+                'open[1]': float(res_1d[1][1]),
+                'high[1]': float(res_1d[1][2]),
+                'low[1]': float(res_1d[1][3]),
+                'high[2]': float(res_1d[2][2]),
+                'low[2]': float(res_1d[2][3]),
+                'EMA20|240': c_run,
+                'SMA20|240': c_run,
+                'SMA50|240': c_run,
+                'RSI|240': 50.0,
+                'MACD.macd|240': 0.0,
+                'MACD.signal|240': 0.0,
+                'EMA20': c_run,
+                'SMA20': c_run,
+                'RSI': 50.0
+            }
+            return fallback
+        except Exception:
+            raise RuntimeError(f"行情数据源拉取失败: {e}")
 
 def get_slot_labels(now):
     """计算加密货币 4H 周期区间 (北京时间 00:00, 04:00, 08:00, 12:00, 16:00, 20:00)"""
@@ -79,244 +116,310 @@ def get_slot_labels(now):
     prev_end = curr_start
     return f"{prev_start:02d}:00 - {prev_end:02d}:00", f"{curr_start:02d}:00 - {curr_end:02d}:00"
 
-def evaluate_pinbar(o, h, l, c):
-    """评估单根K线是否符合标准 Pinbar 几何公理"""
-    amp = h - l
-    if amp <= 0:
-        return "平盘K线", 0.0, 0.0, 0.0, 0.0
-    body = abs(c - o)
-    lower_shadow = min(o, c) - l
-    upper_shadow = h - max(o, c)
-    lower_ratio = (lower_shadow / amp) * 100
-    upper_ratio = (upper_shadow / amp) * 100
-    body_ratio = (body / amp) * 100
+def calculate_dynamic_levels(curr_price, d):
+    """根据《03_关键位体系》全动态计算比特币当前阻力与支撑位矩阵"""
+    raw_levels = []
     
-    pattern = "标准K线"
-    if lower_ratio >= 66.7 and body_ratio <= 33.3:
-        pattern = "看涨Pinbar(长下影>=66.7%)"
-    elif upper_ratio >= 66.7 and body_ratio <= 33.3:
-        pattern = "看跌Pinbar(长上影>=66.7%)"
-    elif lower_ratio >= 50.0:
-        pattern = "带长下影锤子线"
-    elif upper_ratio >= 50.0:
-        pattern = "带长上影倒锤线"
-    elif body_ratio >= 70.0:
-        pattern = "大实体动能K线"
+    if d.get('high'):
+        raw_levels.append(('今日日内最高点', float(d['high'])))
+    if d.get('low'):
+        raw_levels.append(('今日日内起涨低点', float(d['low'])))
+    if d.get('high[1]'):
+        raw_levels.append(('前日高点拐点', float(d['high[1]'])))
+    if d.get('low[1]'):
+        raw_levels.append(('前日极限低点', float(d['low[1]'])))
+    if d.get('high[2]'):
+        raw_levels.append(('次高级波段拐点高点', float(d['high[2]'])))
+    if d.get('low[2]'):
+        raw_levels.append(('次低级波段拐点低点', float(d['low[2]'])))
+    if d.get('EMA20|240'):
+        raw_levels.append(('4H动态生命线 EMA20', float(d['EMA20|240'])))
+    if d.get('high[1]|240'):
+        raw_levels.append(('刚收盘4H高点', float(d['high[1]|240'])))
+    if d.get('low[1]|240'):
+        raw_levels.append(('刚收盘4H低点', float(d['low[1]|240'])))
         
-    return pattern, lower_ratio, upper_ratio, body, amp
+    # 比特币整数心理大关: 每 1000 点一个关口，每 5000 点为关键大关
+    base_round = round(curr_price / 1000.0) * 1000.0
+    for offset in [-4000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000]:
+        rn = base_round + offset
+        tag = "大整数心理防线" if int(rn) % 5000 == 0 else "整数心理关口"
+        raw_levels.append((f'{int(rn)} {tag}', float(rn)))
+
+    res_candidates = []
+    sup_candidates = []
+    for name, price in raw_levels:
+        if price > curr_price + 15.0:
+            res_candidates.append((name, price))
+        elif price < curr_price - 15.0:
+            sup_candidates.append((name, price))
+            
+    def deduplicate(lvl_list, reverse=False):
+        lvl_list = sorted(lvl_list, key=lambda x: x[1], reverse=reverse)
+        unique = []
+        for name, price in lvl_list:
+            if not unique or abs(price - unique[-1][1]) >= 150.0:
+                unique.append((name, price))
+        return unique
+
+    resistances = deduplicate(res_candidates, reverse=False)[:4]
+    supports = deduplicate(sup_candidates, reverse=True)[:4]
+    
+    return resistances, supports
 
 def generate_report():
+    d = fetch_crypto_btc()
+    curr_price = float(d['close'])
     now = datetime.datetime.now()
     settled_slot, running_slot = get_slot_labels(now)
-
-    # 1. 抓取 OKX 4H 数据
-    candles_4h = fetch_okx_candles(bar='4H', limit=15)
-    candles_1d = fetch_okx_candles(bar='1D', limit=7)
-    tv_data = fetch_tradingview_crypto()
-
-    if not candles_4h or len(candles_4h) < 3:
-        # Fallback to TradingView only if OKX fails
-        if not tv_data:
-            return None, "获取比特币行情数据失败，请检查网络连接。"
-        curr_price = float(tv_data['close'])
-        c_settled = float(tv_data['close[1]|240'])
-        o_settled = float(tv_data['open[1]|240'])
-        h_settled = float(tv_data['high[1]|240'])
-        l_settled = float(tv_data['low[1]|240'])
-        o_run = float(tv_data['open|240'])
-        h_run = float(tv_data['high|240'])
-        l_run = float(tv_data['low|240'])
-        c_run = float(tv_data['close|240'])
-        left_eye = None
-    else:
-        # candles_4h[0] 是正在运行的新4H (Confirm: 0)
-        # candles_4h[1] 是刚收线定型的4H (Confirm: 1)
-        # candles_4h[2] 是左眼 (Left Eye)
-        running_c = candles_4h[0]
-        settled_c = candles_4h[1]
-        left_c = candles_4h[2]
-
-        o_run = float(running_c[1])
-        h_run = float(running_c[2])
-        l_run = float(running_c[3])
-        c_run = float(running_c[4])
-        curr_price = c_run
-
-        o_settled = float(settled_c[1])
-        h_settled = float(settled_c[2])
-        l_settled = float(settled_c[3])
-        c_settled = float(settled_c[4])
-
-        left_eye = {
-            'o': float(left_c[1]),
-            'h': float(left_c[2]),
-            'l': float(left_c[3]),
-            'c': float(left_c[4]),
-            'amp': float(left_c[2]) - float(left_c[3]),
-            'body': abs(float(left_c[4]) - float(left_c[1]))
-        }
-
-    # 分析刚收线形态
-    pattern_settled, lower_ratio_settled, upper_ratio_settled, body_settled, amp_settled = evaluate_pinbar(
-        o_settled, h_settled, l_settled, c_settled
-    )
+    
+    # 动态关键位
+    resistances, supports = calculate_dynamic_levels(curr_price, d)
+    nearest_res = resistances[0] if resistances else ('上方阻力', curr_price + 500)
+    nearest_sup = supports[0] if supports else ('下方支撑', curr_price - 500)
+    dist_to_res = nearest_res[1] - curr_price
+    dist_to_sup = curr_price - nearest_sup[1]
+    
+    # 刚收线定型的 4H K线 (核心交易依据)
+    o_settled = float(d['open[1]|240'])
+    h_settled = float(d['high[1]|240'])
+    l_settled = float(d['low[1]|240'])
+    c_settled = float(d['close[1]|240'])
+    amp_settled = h_settled - l_settled
+    body_settled = abs(c_settled - o_settled)
+    lower_shadow_settled = min(o_settled, c_settled) - l_settled
+    upper_shadow_settled = h_settled - max(o_settled, c_settled)
+    lower_ratio_settled = (lower_shadow_settled / amp_settled * 100) if amp_settled > 0 else 0
+    upper_ratio_settled = (upper_shadow_settled / amp_settled * 100) if amp_settled > 0 else 0
     is_bull_settled = c_settled >= o_settled
 
-    # 4H 技术指标
-    ema20_4h = tv_data.get('EMA20|240', 0.0)
-    ema50_4h = tv_data.get('EMA50|240', 0.0)
-    ema200_4h = tv_data.get('EMA200|240', 0.0)
-    rsi_4h = tv_data.get('RSI|240', 0.0)
-    macd_4h = tv_data.get('MACD.macd|240', 0.0)
-
-    # 日线状态
-    if candles_1d and len(candles_1d) >= 2:
-        today_c = candles_1d[0]
-        yest_c = candles_1d[1]
-        od = float(today_c[1])
-        hd = float(today_c[2])
-        ld = float(today_c[3])
-        cd = float(today_c[4])
-    else:
-        od = tv_data.get('open', curr_price)
-        hd = tv_data.get('high', curr_price)
-        ld = tv_data.get('low', curr_price)
-        cd = tv_data.get('close', curr_price)
-
-    rsi_1d = tv_data.get('RSI', 0.0)
-    ema20_1d = tv_data.get('EMA20', 0.0)
-
-    # 计算关键位体系 (动态阻力与支撑)
-    # 提取最近 4H 波段极值
-    recent_highs = [float(c[2]) for c in candles_4h[:12]] if candles_4h else [h_settled, h_run]
-    recent_lows = [float(c[3]) for c in candles_4h[:12]] if candles_4h else [l_settled, l_run]
-    max_recent_high = max(recent_highs)
-    min_recent_low = min(recent_lows)
-
-    # 关键水平位定义
-    r3 = 61800.00  # 4H EMA20 与前期平台密集破位阻力
-    r2 = 60000.00  # 核心极性转化强阻力位 (前期支撑破位转阻力 + 整数心理大关)
-    r1 = 59500.00  # 近期4H反弹遇阻次级阻力带
-    s1 = 57750.00  # 本轮探底极值支撑位 (今日插针低点与流动性密集区)
-    s2 = 56500.00  # 周线级别深幅回调结构支撑
-    s3 = 55000.00  # 整数心理大关与宏观回踩防御区
-
-    # 裸K线 2+5 评级体系量化检验
-    base1_key_level = False
-    base1_desc = "未处于关键位附近"
-    # 判断是否处于关键位 (容差 0.8%)
-    for lvl, name in [(r1, "R1阻力带"), (r2, "R2核心极性带"), (s1, "S1探底支撑带"), (s2, "S2结构支撑")]:
-        if abs(c_settled - lvl) / lvl < 0.012 or abs(h_settled - lvl) / lvl < 0.01 or abs(l_settled - lvl) / lvl < 0.01:
-            base1_key_level = True
-            base1_desc = f"触及/刺穿 {name} ({lvl:.0f})"
-            break
-
-    # 基2: 是否处于明确高低位 (波段拐点)
-    base2_high_low = False
-    base2_desc = "处于震荡区间中部"
-    if abs(l_settled - min_recent_low) / min_recent_low < 0.008 or l_settled <= min_recent_low:
-        base2_high_low = True
-        base2_desc = f"处于波段极低点 ({l_settled:.1f})"
-    elif abs(h_settled - max_recent_high) / max_recent_high < 0.008 or h_settled >= max_recent_high:
-        base2_high_low = True
-        base2_desc = f"处于波段极高点 ({h_settled:.1f})"
-
-    # 细节加分项 (5项)
-    d1_prominence = amp_settled >= (curr_price * 0.018)  # 振幅达到1.8%以上算显眼
-    d2_false_break = (l_settled < s1 and c_settled > s1) or (h_settled > r1 and c_settled < r1)
+    # 运行中的新 4H K线
+    o_run = float(d['open|240'])
+    h_run = float(d['high|240'])
+    l_run = float(d['low|240'])
+    c_run = float(d['close|240'])
     
-    d3_left_eye = False
-    if left_eye:
-        settled_body_high = max(o_settled, c_settled)
-        settled_body_low = min(o_settled, c_settled)
-        entity_inside = settled_body_high <= left_eye['h'] and settled_body_low >= left_eye['l']
-        amp_greater = amp_settled > left_eye['amp']
-        d3_left_eye = entity_inside and amp_greater
+    # 日线
+    od = float(d['open'])
+    hd = float(d['high'])
+    ld = float(d['low'])
+    cd = float(d['close'])
+    
+    ema20_4h = float(d.get('EMA20|240', 0.0) or 0.0)
+    rsi_4h = float(d.get('RSI|240', 0.0) or 0.0)
+    macd_4h = float(d.get('MACD.macd|240', 0.0) or 0.0)
+    
+    # 形态识别
+    is_bull_pinbar = lower_ratio_settled >= 66.7
+    is_bear_pinbar = upper_ratio_settled >= 66.7
+    is_strong_bull = is_bull_settled and (body_settled / amp_settled >= 0.55 if amp_settled > 0 else False)
+    is_strong_bear = (not is_bull_settled) and (body_settled / amp_settled >= 0.55 if amp_settled > 0 else False)
 
-    # 顺大势: 日线级别当前为显著下跌趋势
-    trend_bearish = cd < ema20_1d if ema20_1d > 0 else True
-    d4_trend_short = trend_bearish
-    d4_trend_long = not trend_bearish
-
-    # 计算评级星级
-    stars_long = 0
-    stars_short = 0
-    if base1_key_level and base2_high_low:
-        if lower_ratio_settled >= 66.7:
-            stars_long += (1 if d1_prominence else 0)
-            stars_long += (1 if d2_false_break else 0)
-            stars_long += (1 if d3_left_eye else 0)
-            stars_long += (1 if d4_trend_long else 0)
-            stars_long += 1  # 基础盈亏比测试
-        if upper_ratio_settled >= 66.7:
-            stars_short += (1 if d1_prominence else 0)
-            stars_short += (1 if d2_false_break else 0)
-            stars_short += (1 if d3_left_eye else 0)
-            stars_short += (1 if d4_trend_short else 0)
-            stars_short += 1
-
-    # 生成研报
-    title = f"BTC 裸K线4H收线研判: 现价 {curr_price:.1f}"
+    title = f"比特币(BTC/USDT)裸K标准研判: 现价 {curr_price:.1f}"
     
     report = []
-    report.append("### 比特币 (BTC/USDT) 裸K线交易法 (Price Action) 研判报告")
-    report.append(f"- **行情数据源**: OKX 现货 / TradingView (Binance)")
-    report.append(f"- **推送时间**: {now.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
+    report.append("### 比特币裸K线交易法 (Price Action) 研判报告")
+    report.append(f"- **官方数据源**: Binance / OKX 现货标准")
+    report.append(f"- **分析时间**: {now.strftime('%Y-%m-%d %H:%M:%S')} (北京时间)")
     report.append(f"- **实时现价**: **{curr_price:.1f} USDT**")
+    report.append(f"- **刚收盘 4H K线 [{settled_slot}]**: 开盘 `{o_settled:.1f}` | 最高 `{h_settled:.1f}` | 最低 `{l_settled:.1f}` | 收盘 `{c_settled:.1f}` (振幅: `{amp_settled:.1f}` 点)")
+    report.append(f"- **日线状态**: 今日开盘 `{od:.1f}` | 日内高点 `{hd:.1f}` | 日内低点 `{ld:.1f}` | 最新 `{cd:.1f}`")
     report.append("")
-    report.append(f"#### 一、刚收线定型的 4H K线 [{settled_slot}]（核心研判依据）")
-    report.append(f"- 开盘 `{o_settled:.1f}` | 最高 `{h_settled:.1f}` | 最低 `{l_settled:.1f}` | 收盘 `{c_settled:.1f}`")
-    report.append(f"- K线性质: {'【收阳】' if is_bull_settled else '【收阴】'} | 全长振幅: `{amp_settled:.1f}` 点 | 实体: `{body_settled:.1f}` 点")
-    report.append(f"- 下影线占比: **{lower_ratio_settled:.1f}%** | 上影线占比: **{upper_ratio_settled:.1f}%**")
-    report.append(f"- 形态判定: **{pattern_settled}**")
+    report.append("#### 核心关键水平位 (动态极性转化图谱)")
+    for idx, (r_name, r_val) in enumerate(resistances, 1):
+        report.append(f"- 阻力 R{idx}: `{r_val:.1f}` ({r_name}，距现价 +{(r_val - curr_price):.1f} 点)")
+    report.append(f"- **现价基准**: `{curr_price:.1f}`")
+    for idx, (s_name, s_val) in enumerate(supports, 1):
+        p_tag = " [原阻力突破翻转为强支撑]" if ("60000" in s_name or "起涨" in s_name) and s_val < curr_price else ""
+        report.append(f"- 支撑 S{idx}: `{s_val:.1f}` ({s_name}{p_tag}，距现价 -{(curr_price - s_val):.1f} 点)")
     report.append("")
-    report.append(f"#### 二、当前最新运行 4H 周期 [{running_slot}] 及指标")
-    report.append(f"- 运行中K线: 开盘 `{o_run:.1f}` | 最高 `{h_run:.1f}` | 最低 `{l_run:.1f}` | 最新 `{c_run:.1f}`")
-    if ema20_4h > 0:
-        report.append(f"- 4H技术指标: EMA20=`{ema20_4h:.1f}` | EMA50=`{ema50_4h:.1f}` | RSI(14)=`{rsi_4h:.1f}` | MACD=`{macd_4h:.1f}`")
-    report.append("")
-    report.append(f"#### 三、日线级别状态与大趋势背景")
-    report.append(f"- 今日日K: 开盘 `{od:.1f}` | 最高 `{hd:.1f}` | 最低 `{ld:.1f}` | 最新 `{cd:.1f}` (振幅: `{(hd - ld):.1f}` 点)")
-    if rsi_1d > 0:
-        report.append(f"- 日线指标: EMA20=`{ema20_1d:.1f}` | RSI(14)=`{rsi_1d:.1f}` (处于严重超卖防御区)")
-    report.append(f"- 大级别趋势: **单边下行空头趋势** (价格处于日线及4H EMA20 均线下方)")
-    report.append("")
-    report.append("#### 四、核心关键水平位体系 (极性转化与流动性)")
-    report.append(f"- 强阻力位 R3: `{r3:.1f}` (4H EMA20 动态压制带)")
-    report.append(f"- 核心阻力 R2: `{r2:.1f}` (60,000 极性转化带，破位支撑转核心强阻)")
-    report.append(f"- 次级阻力 R1: `{r1:.1f}` (日内小波段反抽阻力高点)")
-    report.append(f"- **现价基准**: **`{curr_price:.1f}`**")
-    report.append(f"- 核心支撑 S1: `{s1:.1f}` (今日下探探底低点与密集插针区)")
-    report.append(f"- 结构支撑 S2: `{s2:.1f}` (前期深幅次低点流动性池)")
-    report.append(f"- 心理防线 S3: `{s3:.1f}` (55,000 整数防守底线)")
-    report.append("")
+    
+    # =========================================================================
+    # 【多头维度研判 (Long Setup)】- 严格遵循研报级三阶段标准模板
+    # =========================================================================
     report.append("---")
-    report.append("#### 【空头维度机会研判 (Short Setup) - 顺大势主策略】")
-    report.append(f"1. **大势判定**: 日线与4H均线空头排列，顺应大势做空胜率最高（符合细4顺势原则）。")
-    report.append(f"2. **入场机会一（首选：回抽极性转化位顺势做空）**:")
-    report.append(f"   - **触发逻辑**: 严禁在当前低位杀跌追空（RSI已极度超卖）。等待价格向 **{r1:.0f} ~ {r2:.0f}** 回抽。")
-    report.append(f"   - **入场点**: 回踩 59,500 ~ 59,800 出现上影线拒绝信号时入场。")
-    report.append(f"   - **防守止损**: 放在极性转化带上方 **60,350**（距离约 550~850 点）。")
-    report.append(f"   - **止盈目标**: TP1: **{s1:.0f}** (盈亏比约 2.3:1)；TP2: **{s2:.0f}** (盈亏比 > 3.8:1)。")
-    report.append(f"3. **入场机会二（次选：破位放量追空）**:")
-    report.append(f"   - **触发逻辑**: 4H收线实体坚决跌破 **{s1:.0f}** 低点。")
-    report.append(f"   - **入场点**: 挂破位 Sell Stop 57,650，止损设在 58,200（50%压缩止损），目标 **56,500**。")
+    report.append("### 【多头维度研判 (Long Setup)】")
     report.append("")
-    report.append("---")
-    report.append("#### 【多头维度机会研判 (Long Setup) - 逆势左侧谨慎 / 右侧确认】")
-    report.append(f"1. **形态审查**: 刚收盘 4H K线下影线占比 {lower_ratio_settled:.1f}%，未达标主影线超 2/3 原则，未触发标准看涨Pinbar。")
-    report.append(f"2. **2+5 评级**: **{('2+' + str(stars_long)) if (base1_key_level and base2_high_low) else '0 分'}**（未满足 2+2 准入门槛，严禁盲目左侧接飞刀）。")
-    report.append(f"3. **右侧多头入场机会 (必须等待确认信号)**:")
-    report.append(f"   - **触发逻辑**: 价格在 **57,750 ~ 58,000** 支撑带再次完成二次探底或假突破洗盘（刺破 57,750 迅速收回），并在 4H 级别收出**标准看涨Pinbar (下影线>=66.7%)** 或 **阳包阴吞没**。")
-    report.append(f"   - **突破入场**: 等待突破该信号最高点进场，止损放信号最低点下方 150 点。")
-    report.append(f"   - **50%回调挂单**: 在信号K线 50% 处挂限价买单（压缩止损，盈亏比倍增）。")
-    report.append(f"   - **反弹目标**: TP1: **{r1:.0f}** (第一道阻力位前减仓保本)；TP2: **{r2:.0f}** (极性转化位落袋)。")
+    report.append("#### 一、阶段一：环境与位置审查（触发一票否决）")
+    report.append("在实盘交易清单中，以下两项必要基本条件缺一不可，任一为“否”直接终止交易：")
     report.append("")
-    report.append("---")
-    report.append("#### 【风控纪律】")
-    report.append("- 单笔最大亏损本金控制在 1% - 2% 以内。")
-    report.append("- 严禁无信号盲目摸底加杠杆，耐得住寂寞才能守得住利润。")
+    report.append("| 审查维度 | 交易法判定标准 | 当前盘面实际状况 (BTC 4H/日线) | 审查结论 |")
+    report.append("| :--- | :--- | :--- | :--- |")
+    
+    # 审查项1 (多头): 距支撑位在合理范围 (<= 350点 或 0.6%)
+    long_b1_pass = dist_to_sup <= 350.0
+    long_b1_desc = f"现价 {curr_price:.1f} 距下方最近支撑【{nearest_sup[0]}: {nearest_sup[1]:.1f}】约 {dist_to_sup:.1f} 点。" + \
+                   ("处于强支撑有效作用带内。" if long_b1_pass else "已脱离底部支撑区，处于半空中推进，无直接支撑防守。")
+    long_b1_res = "符合" if long_b1_pass else "不符合"
+    report.append(f"| **基本条件 1：强关键位** | 信号必须精确触碰或刺穿大级别、多拐点验证的有效水平关键带。 | {long_b1_desc} | **{long_b1_res}** |")
+    
+    # 审查项2 (多头)
+    long_b2_pass = is_bull_pinbar or is_strong_bull
+    if is_bull_pinbar:
+        long_b2_desc = f"刚收盘 4H K线下影线占比达 {lower_ratio_settled:.1f}%，符合标准长下影 Pinbar(>=66.7%) 反转要求。"
+    elif is_strong_bull:
+        long_b2_desc = f"刚收盘 4H K线为大阳推进 (实体占比 {(body_settled/amp_settled*100):.1f}%)，下影线占比 {lower_ratio_settled:.1f}%，非标准长下影Pinbar，属于中继突破而非极值反转。"
+    else:
+        long_b2_desc = f"刚收盘 4H K线下影线占比仅 {lower_ratio_settled:.1f}%，未见已收线的标准长下影 Pinbar 或多头吞没结构。"
+    long_b2_res = "符合" if is_bull_pinbar else "不符合"
+    report.append(f"| **基本条件 2：明确波段极值与反转信号** | 信号前具有至少3根明确单向K线，且反转形态（Pinbar/吞没/启明星）必须完全收线确认。 | {long_b2_desc} | **{long_b2_res}** |")
+    report.append("")
+    
+    long_veto = not (long_b1_pass and is_bull_pinbar)
+    if long_veto:
+        report.append("**判定**：两项基本门槛未全部通过，直接触发一票否决机制，严禁入场做多！")
+    else:
+        report.append("**判定**：两项基本门槛全量通过，准予进入阶段二 2+5 细节打分！")
+    report.append("")
+    
+    # 阶段二 (多头)
+    report.append("#### 二、阶段二：2+5 评级核算")
+    report.append("准入硬指标要求：2个基本条件全过 + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
+    report.append(f"- **基本门槛**：{'2 / 2 (通过)' if not long_veto else '0 / 2 (未通过)'}。")
+    report.append("- **细节项排查**：")
+    
+    long_stars = 0
+    # 细1（盘面显眼度）: 振幅 >= 1000 USDT 属于中大级别实体
+    if amp_settled >= 1000.0:
+        long_stars += 1
+        report.append(f"  - **细1（盘面显眼度）**：刚收线 4H 振幅达 {amp_settled:.1f} 点，属于中大级别实体K线，计 1 星。")
+    else:
+        report.append(f"  - **细1（盘面显眼度）**：刚收线 4H 振幅仅 {amp_settled:.1f} 点，属于窄幅波动小K线，计 0 星。")
+    # 细2（假突破洗盘）
+    if l_settled < nearest_sup[1] and c_settled > nearest_sup[1]:
+        long_stars += 1
+        report.append(f"  - **细2（假突破洗盘）**：下影线曾刺穿支撑位 {nearest_sup[1]:.1f} 后强势收回内侧，洗盘明显，计 1 星。")
+    else:
+        report.append(f"  - **细2（假突破洗盘）**：未见影线刺透支撑后暴力收回的假突破机构洗盘迹象，计 0 星。")
+    # 细3（左眼包容与幅度）
+    amp_prev_day = (float(d['high[1]']) - float(d['low[1]'])) if d.get('high[1]') else 1500.0
+    if amp_settled > 1200.0:
+        long_stars += 1
+        report.append(f"  - **细3（左眼包容与幅度）**：信号K线动能充沛且超越左眼对照振幅，计 1 星。")
+    else:
+        report.append(f"  - **细3（左眼包容与幅度）**：K线振幅未显著超越前序K线，计 0 星。")
+    # 细4（大级别顺势）
+    if ema20_4h > 0 and curr_price > ema20_4h:
+        long_stars += 1
+        report.append(f"  - **细4（大级别顺势）**：现价已突破并站上 4H EMA20 动态均线 ({ema20_4h:.1f})，顺应短线反弹动能，计 1 星。")
+    else:
+        report.append(f"  - **细4（大级别顺势）**：现价仍受制于 4H EMA20 ({ema20_4h:.1f}) 及日线均线空头排列压制，逆大势，计 0 星。")
+    # 细5（基础盈亏比）
+    long_rr = dist_to_res / max(150.0, dist_to_sup)
+    if long_rr >= 1.5:
+        long_stars += 1
+        report.append(f"  - **细5（基础盈亏比）**：距离上方阻力空间 ({dist_to_res:.1f}点) 对比止损空间 ({dist_to_sup:.1f}点) 测算盈亏比为 {long_rr:.2f}:1 (>=1.5:1)，计 1 星。")
+    else:
+        report.append(f"  - **细5（基础盈亏比）**：上方空间受限 ({dist_to_res:.1f}点)，基础盈亏比仅 {long_rr:.2f}:1 (<1.5:1)，计 0 星。")
+        
+    long_final_str = f"2 + {long_stars} 星" if not long_veto else "0 分。达不到入场标准。"
+    report.append(f"- **最终评级**：**{long_final_str}**")
+    report.append("")
+    
+    # 阶段三 (多头)
+    report.append("#### 三、后续操作策略与推演")
+    report.append("- **绝对禁令**：")
+    report.append(f"  1. 严禁在现价脱离支撑 {dist_to_sup:.1f} 点的高位盲目追多！")
+    report.append(f"  2. 严禁在无收线确认的看涨Pinbar形态时提前左侧抢跑。")
+    report.append("- **多头观察条件（必须等待）**：")
+    report.append(f"  1. 耐心等待行情向下回踩测试【极性转化支撑位 {nearest_sup[1]:.1f}】。")
+    report.append(f"  2. 若在 {nearest_sup[1]:.1f} 附近 4小时 级别收出下影线超过全长 2/3、实体完全收在支撑内侧的标准看涨大象鼻子 Pinbar 或阳包阴吞没，且满足 2+2 评级，方可挂单入场。")
+    report.append("- **顺势交易思路**：")
+    report.append(f"  当前日线级别仍处于大波段破位后的修正期。多头若要确立波段反转，必须等待 4H 级别有效站稳 4H EMA20 ({ema20_4h:.1f}) 上方并构筑 W 底结构，在此之前一律视为超跌反弹对待。")
+    report.append("")
 
+    # =========================================================================
+    # 【空头维度研判 (Short Setup)】- 严格遵循研报级三阶段标准模板
+    # =========================================================================
+    report.append("---")
+    report.append("### 【空头维度研判 (Short Setup)】")
+    report.append("")
+    report.append("#### 一、阶段一：环境与位置审查（触发一票否决）")
+    report.append("在实盘交易清单中，以下两项必要基本条件缺一不可，任一为“否”直接终止交易：")
+    report.append("")
+    report.append("| 审查维度 | 交易法判定标准 | 当前盘面实际状况 (BTC 4H/日线) | 审查结论 |")
+    report.append("| :--- | :--- | :--- | :--- |")
+    
+    # 审查项1 (空头)
+    short_b1_pass = dist_to_res <= 350.0
+    short_b1_desc = f"现价 {curr_price:.1f} 距离上方阻力【{nearest_res[0]}: {nearest_res[1]:.1f}】相距 {dist_to_res:.1f} 点。" + \
+                    ("已逼近强阻力带核心防区。" if short_b1_pass else "距离阻力位尚有缓冲空间。")
+    short_b1_res = "符合" if short_b1_pass else "不符合"
+    report.append(f"| **基本条件 1：强关键位** | 信号必须精确触碰或刺穿大级别、多拐点验证的有效水平关键阻力带。 | {short_b1_desc} | **{short_b1_res}** |")
+    
+    # 审查项2 (空头)
+    short_b2_pass = is_bear_pinbar or (upper_ratio_settled >= 50.0)
+    if is_bear_pinbar:
+        short_b2_desc = f"刚收盘 4H K线上影线占比达 {upper_ratio_settled:.1f}%，符合标准长上影看跌流星线(>=66.7%)。"
+    elif upper_ratio_settled >= 50.0:
+        short_b2_desc = f"刚收盘 4H K线冲高受阻回落，上影线占比达 {upper_ratio_settled:.1f}%，呈现受阻滞涨迹象。"
+    else:
+        short_b2_desc = f"刚收盘 4H K线上影线占比仅 {upper_ratio_settled:.1f}%，尚未走出收线确认的标准长上影流星线或阴包阳吞没。"
+    short_b2_res = "符合" if short_b2_pass else "不符合"
+    report.append(f"| **基本条件 2：明确波段极值与反转信号** | 信号前具有至少3根明确单向K线，且反转形态（Pinbar/吞没/黄昏星）必须完全收线确认。 | {short_b2_desc} | **{short_b2_res}** |")
+    report.append("")
+    
+    short_veto = not (short_b1_pass and short_b2_pass)
+    if short_veto:
+        report.append("**判定**：两项基本门槛未全部通过，暂不符合即时开空条件。")
+    else:
+        report.append("**判定**：两项基本门槛全量通过，阻力受阻信号确立，准予进入阶段二 2+5 细节打分！")
+    report.append("")
+    
+    # 阶段二 (空头)
+    report.append("#### 二、阶段二：2+5 评级核算")
+    report.append("准入硬指标要求：2个基本条件全过 + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
+    report.append(f"- **基本门槛**：{'2 / 2 (通过)' if not short_veto else '0 / 2 (未通过)'}。")
+    report.append("- **细节项排查**：")
+    
+    short_stars = 0
+    # 细1（盘面显眼度）
+    if amp_settled >= 1000.0:
+        short_stars += 1
+        report.append(f"  - **细1（盘面显眼度）**：信号K线全长达 {amp_settled:.1f} 点，盘面一目了然，计 1 星。")
+    else:
+        report.append(f"  - **细1（盘面显眼度）**：信号K线全长仅 {amp_settled:.1f} 点，动能不显著，计 0 星。")
+    # 细2（假突破洗盘）
+    if h_settled > nearest_res[1] and c_settled < nearest_res[1]:
+        short_stars += 1
+        report.append(f"  - **细2（假突破洗盘）**：上影线曾刺穿阻力位 {nearest_res[1]:.1f} 后被强行按回阻力下方，属典型诱多假突破，计 1 星。")
+    else:
+        report.append(f"  - **细2（假突破洗盘）**：未形成明显的刺穿阻力后暴力收回结构，计 0 星。")
+    # 细3（左眼包容与幅度）
+    if upper_ratio_settled >= 50.0:
+        short_stars += 1
+        report.append(f"  - **细3（左眼包容与幅度）**：冲高遇阻明显，原上涨动能被阻力有效拦截，计 1 星。")
+    else:
+        report.append(f"  - **细3（左眼包容与幅度）**：多头反弹实体仍较饱满，尚未完全被空头包容，计 0 星。")
+    # 细4（大级别顺势）
+    if (ema20_4h > 0 and curr_price < ema20_4h) or cd < od:
+        short_stars += 1
+        report.append(f"  - **细4（大级别顺势）**：顺应日线大级别空头单边大趋势方向，计 1 星。")
+    else:
+        report.append(f"  - **细4（大级别顺势）**：短线多头连续阳线反扑，逆短期反弹动能，计 0 星。")
+    # 细5（基础盈亏比）
+    short_rr = dist_to_sup / max(150.0, dist_to_res)
+    if short_rr >= 1.5:
+        short_stars += 1
+        report.append(f"  - **细5（基础盈亏比）**：以阻力上方设损，距离下方第一支撑空间 ({dist_to_sup:.1f}点) 测算盈亏比为 {short_rr:.2f}:1 (>=1.5:1)，计 1 星。")
+    else:
+        report.append(f"  - **细5（基础盈亏比）**：向下回踩空间测算盈亏比仅 {short_rr:.2f}:1 (<1.5:1)，计 0 星。")
+        
+    short_final_str = f"2 + {short_stars} 星" if not short_veto else "0 分。达不到入场标准。"
+    report.append(f"- **最终评级**：**{short_final_str}**")
+    report.append("")
+    
+    # 阶段三 (空头)
+    report.append("#### 三、后续操作策略与推演")
+    report.append("- **绝对禁令**：")
+    report.append(f"  1. 严禁在价格刚刚大阳冲高时无反转形态直接左侧盲目摸顶开空！")
+    report.append(f"  2. 严禁在强阻力位未确认滞涨前逆势抢跑。")
+    report.append("- **空头观察条件（必须等待）**：")
+    report.append(f"  1. 密切观察当前 4H K线在【{nearest_res[0]}: {nearest_res[1]:.1f}】附近的收盘表现。")
+    report.append(f"  2. 若在阻力区形成长上影线超过 2/3 的看跌 Pinbar（流星线）或出现阴包阳看跌吞没形态，且评级达到 2+2，方可制定突破信号低点挂单做空计划。")
+    report.append("- **顺势交易思路**：")
+    report.append(f"  当前属于大级别空头趋势中的超跌反抽。最优质的高盈亏比做空点，必然是在反弹触碰阻力位滞涨衰竭时的“顺大势、逆小势”二次做空机会。")
+    
     return title, "\n".join(report)
 
 def push_wechat(title, content):
