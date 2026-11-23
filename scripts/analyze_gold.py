@@ -244,17 +244,21 @@ def generate_report():
     report.append(f"| **基本条件 2：明确波段极值与反转信号** | 信号前具有至少3根明确单向K线，且反转形态（Pinbar/吞没/启明星）必须完全收线确认。 | {long_b2_desc} | **{long_b2_res}** |")
     report.append("")
     
-    long_veto = not (long_b1_pass and is_bull_pinbar)
+    long_base_passed = (1 if long_b1_pass else 0) + (1 if is_bull_pinbar else 0)
+    long_veto = (long_base_passed < 2)
     if long_veto:
-        report.append("**判定**：两项基本门槛未全部通过，直接触发一票否决机制，严禁入场做多！")
+        report.append(f"**判定**：基本门槛仅达成 {long_base_passed}/2 项，触发一票否决机制，严禁入场做多！")
     else:
-        report.append("**判定**：两项基本门槛全量通过，准予进入阶段二 2+5 细节打分！")
+        report.append("**判定**：两项基本门槛全量通过 (2/2)，准予进入阶段二 2+5 细节打分！")
     report.append("")
     
     # 阶段二 (多头)
     report.append("#### 二、阶段二：2+5 评级核算")
-    report.append("准入硬指标要求：2个基本条件全过 + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
-    report.append(f"- **基本门槛**：{'2 / 2 (通过)' if not long_veto else '0 / 2 (未通过)'}。")
+    report.append("准入硬指标要求：2个基本条件全过 (2/2) + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
+    if long_base_passed == 2:
+        report.append(f"- **基本门槛**：**2 / 2 项通过（门槛达标）**。")
+    else:
+        report.append(f"- **基本门槛**：**{long_base_passed} / 2 项通过（缺项未达标，触发一票否决）**。")
     report.append("- **细节项排查**：")
     
     long_stars = 0
@@ -291,10 +295,12 @@ def generate_report():
     else:
         report.append(f"  - **细5（基础盈亏比）**：上方空间受限 ({dist_to_res:.1f}点)，基础盈亏比仅 {long_rr:.2f}:1 (<1.5:1)，计 0 星。")
         
-    if not long_veto:
-        long_final_str = f"2 + {long_stars} 星 (准予制定入场计划)"
+    if not long_veto and long_stars >= 2:
+        long_final_str = f"2 + {long_stars} 星【准予入场】（满足 2+2 准入硬指标，具备开仓价值）"
+    elif not long_veto and long_stars < 2:
+        long_final_str = f"2 + {long_stars} 星【不合格】（基本门槛达成，但细节不足2星，仅作观察）"
     else:
-        long_final_str = f"0 分【一票否决生效】 (细节获 {long_stars} 星，但基本门槛仅 0/2 未达标，触发刚性拦截)"
+        long_final_str = f"{long_base_passed} + {long_stars} 星【不合格】（基本门槛仅 {long_base_passed}/2 项通过触发一票否决，虽细节获 {long_stars} 星但未达 2+2 准入红线，严禁开仓）"
     report.append(f"- **最终评级**：**{long_final_str}**")
     report.append("")
     
@@ -341,17 +347,21 @@ def generate_report():
     report.append(f"| **基本条件 2：明确波段极值与反转信号** | 信号前具有至少3根明确单向K线，且反转形态（Pinbar/吞没/黄昏星）必须完全收线确认。 | {short_b2_desc} | **{short_b2_res}** |")
     report.append("")
     
-    short_veto = not (short_b1_pass and short_b2_pass)
+    short_base_passed = (1 if short_b1_pass else 0) + (1 if short_b2_pass else 0)
+    short_veto = (short_base_passed < 2)
     if short_veto:
-        report.append("**判定**：两项基本门槛未全部通过，暂不符合即时开空条件。")
+        report.append(f"**判定**：基本门槛仅达成 {short_base_passed}/2 项，暂不符合即时开空条件。")
     else:
-        report.append("**判定**：两项基本门槛全量通过，阻力受阻信号确立，准予进入阶段二 2+5 细节打分！")
+        report.append("**判定**：两项基本门槛全量通过 (2/2)，阻力受阻信号确立，准予进入阶段二 2+5 细节打分！")
     report.append("")
     
     # 阶段二 (空头)
     report.append("#### 二、阶段二：2+5 评级核算")
-    report.append("准入硬指标要求：2个基本条件全过 + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
-    report.append(f"- **基本门槛**：{'2 / 2 (通过)' if not short_veto else '0 / 2 (未通过)'}。")
+    report.append("准入硬指标要求：2个基本条件全过 (2/2) + 细节项 $\ge 2$ 星（即 $\ge 2+2$）。")
+    if short_base_passed == 2:
+        report.append(f"- **基本门槛**：**2 / 2 项通过（门槛达标）**。")
+    else:
+        report.append(f"- **基本门槛**：**{short_base_passed} / 2 项通过（缺项未达标，触发一票否决）**。")
     report.append("- **细节项排查**：")
     
     short_stars = 0
@@ -387,10 +397,12 @@ def generate_report():
     else:
         report.append(f"  - **细5（基础盈亏比）**：向下回踩空间测算盈亏比仅 {short_rr:.2f}:1 (<1.5:1)，计 0 星。")
         
-    if not short_veto:
-        short_final_str = f"2 + {short_stars} 星 (准予制定入场计划)"
+    if not short_veto and short_stars >= 2:
+        short_final_str = f"2 + {short_stars} 星【准予入场】（满足 2+2 准入硬指标，具备开仓价值）"
+    elif not short_veto and short_stars < 2:
+        short_final_str = f"2 + {short_stars} 星【不合格】（基本门槛达成，但细节不足2星，仅作观察）"
     else:
-        short_final_str = f"0 分【一票否决生效】 (细节获 {short_stars} 星，但基本门槛仅 0/2 未达标，触发刚性拦截)"
+        short_final_str = f"{short_base_passed} + {short_stars} 星【不合格】（基本门槛仅 {short_base_passed}/2 项通过触发一票否决，虽细节获 {short_stars} 星但未达 2+2 准入红线，严禁开仓）"
     report.append(f"- **最终评级**：**{short_final_str}**")
     report.append("")
     
