@@ -481,43 +481,74 @@ def generate_report(test_d=None):
     if is_qualified:
         report.append("### 三、 实战执行方案（评级 >= 2+2，已激活准予执行）")
         report.append("")
-        report.append("#### 1. 入场与止损核心参数配置")
+        report.append("#### 1. 入场与止损配对方案配置")
         if signal_dir == "long":
-            entry_b = l_settled + amp_settled * 0.5
-            sl_tight = l_settled + amp_settled * 0.5
-            sl_pts_b = entry_b - sl_std
-            tp_pts_b = tp1 - entry_b
+            mid_50 = l_settled + amp_settled * 0.5
+            sl_pts_a = entry_a - sl_std
+            sl_pts_a_tight = entry_a - mid_50
+            tp_pts_a = tp1 - entry_a
+            rr_a = tp_pts_a / sl_pts_a if sl_pts_a > 0 else 0
+            rr_a_tight = tp_pts_a / sl_pts_a_tight if sl_pts_a_tight > 0 else 0
+
+            sl_pts_b = mid_50 - sl_std
+            tp_pts_b = tp1 - mid_50
             rr_b = tp_pts_b / sl_pts_b if sl_pts_b > 0 else 0
+
+            lots_a = round(500.0 / (sl_pts_a * 10.0), 2) if sl_pts_a > 0 else 0.01
+            lots_b = round(500.0 / (sl_pts_b * 10.0), 2) if sl_pts_b > 0 else 0.01
+
             report.append(f"- **开仓方向：** `做多 (Long)`")
-            report.append(f"- **入场方式选择：** `方案A: 突破最高点挂单入场 / 方案B: 50%回踩限价挂单`")
-            report.append(f"- **精确入场价格：** `方案A 挂单价 {entry_a:.2f} (最高价+缓冲) | 方案B 挂单价 {entry_b:.2f} (50%回撤)`")
-            report.append(f"- **精确止损价格 (SL)：** `标准止损点 {sl_std:.2f} (影线极值外侧) | 压缩止损点 {sl_tight:.2f}`")
-            report.append(f"- **第一目标止盈位 (TP1)：** `{tp1:.2f} (关键阻力位内侧让出2点冗余)`")
-            report.append(f"- **实测盈亏比 (R:R)：** 方案A 突破盈亏比 **`{act_rr:.2f} : 1`** | 方案B 50%回踩盈亏比 **`{rr_b:.2f} : 1`**")
-            if act_rr < 1.5:
-                report.append(f"> **策略警示：** 方案A 突破盈亏比不足 1.5:1 ({act_rr:.2f}:1)，因信号K线全长达 {amp_settled:.1f} 点导致止损过宽，**严禁追突破**！必须使用 **方案B (50%回踩限价挂单)** 入场。")
+            report.append(f"- **方案A【突破最高点挂单 - 稳健顺势型】：**")
+            report.append(f"  - **挂单入场 (Buy Stop)：** `{entry_a:.2f}` (突破信号高点 + 缓冲)")
+            report.append(f"  - **止损配置 (SL)：** 标准止损 `{sl_std:.2f}` (影线极值外侧，止损空间 {sl_pts_a:.1f} 点) | 50%压缩止损 `{mid_50:.2f}` (K线中轴防守，仅限突破单使用，止损空间 {sl_pts_a_tight:.1f} 点)")
+            report.append(f"  - **第一目标 (TP1)：** `{tp1:.2f}` (关键阻力位内侧让出2点冗余)")
+            report.append(f"  - **实测盈亏比 (R:R)：** 标准止损 **`{rr_a:.2f} : 1`** | 压缩止损 **`{rr_a_tight:.2f} : 1`**")
+            report.append(f"- **方案B【50%回踩限价挂单 - 高盈亏比型】(首选推荐)：**")
+            report.append(f"  - **挂单入场 (Buy Limit)：** `{mid_50:.2f}` (信号K线 50% 回撤位)")
+            report.append(f"  - **止损配置 (SL)：** `{sl_std:.2f}` (必须设在影线极值外侧，止损空间 {sl_pts_b:.1f} 点，严禁把止损设在入场价)")
+            report.append(f"  - **第一目标 (TP1)：** `{tp1:.2f}` (盈利空间 {tp_pts_b:.1f} 点)")
+            report.append(f"  - **实测盈亏比 (R:R)：** **`{rr_b:.2f} : 1`**")
+            if rr_a < 1.5:
+                report.append(f"> **策略警示：** 方案A 标准突破盈亏比不足 1.5:1 ({rr_a:.2f}:1)，因信号K线全长达 {amp_settled:.1f} 点导致追多止损过宽，**严禁高位追突破**！必须使用 **方案B (50%回踩限价挂单: {mid_50:.2f})** 入场。")
         else:
-            entry_b = h_settled - amp_settled * 0.5
-            sl_tight = h_settled - amp_settled * 0.5
-            sl_pts_b = sl_std - entry_b
-            tp_pts_b = entry_b - tp1
+            mid_50 = h_settled - amp_settled * 0.5
+            sl_pts_a = sl_std - entry_a
+            sl_pts_a_tight = mid_50 - entry_a
+            tp_pts_a = entry_a - tp1
+            rr_a = tp_pts_a / sl_pts_a if sl_pts_a > 0 else 0
+            rr_a_tight = tp_pts_a / sl_pts_a_tight if sl_pts_a_tight > 0 else 0
+
+            sl_pts_b = sl_std - mid_50
+            tp_pts_b = mid_50 - tp1
             rr_b = tp_pts_b / sl_pts_b if sl_pts_b > 0 else 0
+
+            lots_a = round(500.0 / (sl_pts_a * 10.0), 2) if sl_pts_a > 0 else 0.01
+            lots_b = round(500.0 / (sl_pts_b * 10.0), 2) if sl_pts_b > 0 else 0.01
+
             report.append(f"- **开仓方向：** `做空 (Short)`")
-            report.append(f"- **入场方式选择：** `方案A: 跌破最低点挂单入场 / 方案B: 50%反弹限价挂单`")
-            report.append(f"- **精确入场价格：** `方案A 挂单价 {entry_a:.2f} (最低价-缓冲) | 方案B 挂单价 {entry_b:.2f} (50%反弹)`")
-            report.append(f"- **精确止损价格 (SL)：** `标准止损点 {sl_std:.2f} (影线极值外侧) | 压缩止损点 {sl_tight:.2f}`")
-            report.append(f"- **第一目标止盈位 (TP1)：** `{tp1:.2f} (关键支撑位内侧让出2点冗余)`")
-            report.append(f"- **实测盈亏比 (R:R)：** 方案A 突破盈亏比 **`{act_rr:.2f} : 1`** | 方案B 50%反弹盈亏比 **`{rr_b:.2f} : 1`**")
-            if act_rr < 1.5:
-                report.append(f"> **策略警示：** 方案A 突破盈亏比不足 1.5:1 ({act_rr:.2f}:1)，因信号K线全长达 {amp_settled:.1f} 点导致止损过宽，**严禁追突破**！必须使用 **方案B (50%反弹限价挂单)** 入场。")
+            report.append(f"- **方案A【跌破最低点挂单 - 稳健顺势型】：**")
+            report.append(f"  - **挂单入场 (Sell Stop)：** `{entry_a:.2f}` (跌破信号低点 - 缓冲)")
+            report.append(f"  - **止损配置 (SL)：** 标准止损 `{sl_std:.2f}` (影线极值外侧，止损空间 {sl_pts_a:.1f} 点) | 50%压缩止损 `{mid_50:.2f}` (K线中轴防守，仅限突破单使用，止损空间 {sl_pts_a_tight:.1f} 点)")
+            report.append(f"  - **第一目标 (TP1)：** `{tp1:.2f}` (关键支撑位内侧让出2点冗余)")
+            report.append(f"  - **实测盈亏比 (R:R)：** 标准止损 **`{rr_a:.2f} : 1`** | 压缩止损 **`{rr_a_tight:.2f} : 1`**")
+            report.append(f"- **方案B【50%反弹限价挂单 - 高盈亏比型】(首选推荐)：**")
+            report.append(f"  - **挂单入场 (Sell Limit)：** `{mid_50:.2f}` (信号K线 50% 反弹位)")
+            report.append(f"  - **止损配置 (SL)：** `{sl_std:.2f}` (必须设在影线极值外侧，止损空间 {sl_pts_b:.1f} 点，严禁把止损设在入场价)")
+            report.append(f"  - **第一目标 (TP1)：** `{tp1:.2f}` (盈利空间 {tp_pts_b:.1f} 点)")
+            report.append(f"  - **实测盈亏比 (R:R)：** **`{rr_b:.2f} : 1`**")
+            if rr_a < 1.5:
+                report.append(f"> **策略警示：** 方案A 标准突破盈亏比不足 1.5:1 ({rr_a:.2f}:1)，因信号K线全长达 {amp_settled:.1f} 点导致追空止损过宽，**严禁低位追空追突破**！必须使用 **方案B (50%反弹限价挂单: {mid_50:.2f})** 入场。")
 
         report.append("")
         report.append("#### 2. 数学仓位计算（固定亏损风控模型）")
         report.append(f"- **本笔交易预设固定亏损上限：** `$500 (或账户净值 1%~2%)`")
-        report.append(f"- **止损距离 (Points)：** `{sl_pts:.1f} 点`")
         report.append(f"- **合约点值 (Point Value)：** `黄金 1手 1点 = $10`")
-        lots = round(500.0 / (sl_pts * 10.0), 2) if sl_pts > 0 else 0.01
-        report.append(f"- **执行建仓手数：** `建仓手数 = 500 / (10 * {sl_pts:.1f}) =` **`{lots} 手`**")
+        if rr_a < 1.5:
+            report.append(f"- **首选推荐方案B建仓：** `止损空间 {sl_pts_b:.1f} 点 -> 建仓手数 = 500 / (10 * {sl_pts_b:.1f}) =` **`{lots_b} 手`**")
+            report.append(f"- **备用方案A建仓：** `标准止损空间 {sl_pts_a:.1f} 点 -> 建仓手数 =` **`{lots_a} 手`**")
+        else:
+            report.append(f"- **方案A突破建仓：** `止损空间 {sl_pts_a:.1f} 点 -> 建仓手数 = 500 / (10 * {sl_pts_a:.1f}) =` **`{lots_a} 手`**")
+            report.append(f"- **方案B回撤建仓：** `止损空间 {sl_pts_b:.1f} 点 -> 建仓手数 = 500 / (10 * {sl_pts_b:.1f}) =` **`{lots_b} 手`**")
         report.append("")
         report.append("#### 3. 动态跟踪与后手规则")
         report.append("1. **保本减仓：** 价格触达 **TP1** 时，强制平仓 50% 锁定利润，并将剩余仓位止损移动至**开仓成本价（零风险持仓）**。")
