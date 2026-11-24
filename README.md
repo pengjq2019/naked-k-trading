@@ -32,7 +32,7 @@
 ├── .github/
 │   └── workflows/
 │       ├── btc_alert.yml       # 比特币 4H 收线自动推送工作流 (00:05, 04:05, 08:05, 12:05, 16:05, 20:05)
-│       └── gold_alert.yml      # 黄金 4H 收线自动推送工作流
+│       └── gold_alert.yml      # 黄金 4H 收线自动推送工作流 (冬令时: 03:08, 07:08, 11:08, 15:08, 19:08, 23:08; 夏令时提前1小时)
 ├── knowledge_base/             # 裸K线交易法系统性知识库
 │   ├── 01_核心哲学与交易系统/
 │   ├── 02_K线语言与形态学/
@@ -101,11 +101,13 @@
 - **URL**: `https://api.github.com/repos/pengjq2019/naked-k-trading/dispatches`
 - **Request Method**: `POST`
 - **Schedule**:
-  - **Timezone**: `Asia/Shanghai (UTC+08:00)`
-  - **Schedule type**: `User-defined`
-  - **Hours**: 勾选 `2, 6, 10, 14, 18, 22`
-  - **Minutes**: 勾选 `8`
-  - **Days of week**: 勾选周一至周五（过滤周末休市）
+  - **Timezone**: `Asia/Shanghai (UTC+08:00)` (或 `UTC`)
+  - **Schedule type**: `User-defined` 或 `Crontab`
+  - **Crontab 表达式 (冬令时当前生效)**: `8 3,7,11,15,19,23 * * *`
+  - **UI 勾选方式**:
+    - **Hours**: 勾选 `3, 7, 11, 15, 19, 23` (冬令时)；夏令时勾选 `2, 6, 10, 14, 18, 22`
+    - **Minutes**: 勾选 `8` (收线后第8分钟)
+    - **Days of week**: 全选或周一至周五（脚本内置休市自动跳过）
 - **Headers** 与上方相同
 - **Request Body**:
   ```json
